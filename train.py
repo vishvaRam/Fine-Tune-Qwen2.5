@@ -119,7 +119,7 @@ training_args = TrainingArguments(
 )
 
 # 6. Set up data collator
-tokenizer.padding_side = "right"
+tokenizer.padding_side = "left"
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 # 7. Initialize the Trainer
