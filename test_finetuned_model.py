@@ -95,3 +95,7 @@ for i, test in enumerate(test_instructions):
     print(response)
     print(f"\nGeneration Time: {generation_time:.4f} seconds")
     print("-" * 50)
+
+
+# Total Generation Time for 3 samples: 17.7721 seconds
+# Average Generation Time per sample: 5.9240 seconds
