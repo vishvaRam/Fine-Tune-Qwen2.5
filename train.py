@@ -142,7 +142,7 @@ train_history = train_result.metrics
 eval_history = trainer.evaluate()
 
 # Extract loss values
-train_loss = [train_history[f"train_loss_epoch"]]
+train_loss = [train_history["train_loss"]] 
 eval_loss = [eval_history["eval_loss"]]
 
 # Extract epochs
