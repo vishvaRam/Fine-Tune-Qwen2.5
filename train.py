@@ -22,6 +22,7 @@ else:
 model_name = "Qwen/Qwen2.5-0.5B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token  # Set pad token if it's missing
+tokenizer.padding_side = "left" # IMPORTANT: Set padding_side to 'left' BEFORE tokenizing
 
 # 2. Load the dataset
 dataset_name = "databricks/databricks-dolly-15k"  # Replace with your desired dataset
@@ -119,7 +120,6 @@ training_args = TrainingArguments(
 )
 
 # 6. Set up data collator
-tokenizer.padding_side = "left"
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 # 7. Initialize the Trainer
