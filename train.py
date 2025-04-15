@@ -6,10 +6,10 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForLanguageModeling,
+    BitsAndBytesConfig,  # Import BitsAndBytesConfig
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import matplotlib.pyplot as plt
-
 
 # Check for CUDA availability
 if not torch.cuda.is_available():
@@ -25,7 +25,7 @@ tokenizer.pad_token = tokenizer.eos_token  # Set pad token if it's missing
 
 # 2. Load the dataset
 dataset_name = "databricks/databricks-dolly-15k"  # Replace with your desired dataset
-dataset = load_dataset(dataset_name,split="train[:6000]")
+dataset = load_dataset(dataset_name, split="train[:6000]")
 
 # 1. Format the dataset first
 def format_dolly(sample):
@@ -44,7 +44,11 @@ def tokenize_function(examples):
     return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=512)
 
 # Apply tokenization to create input_ids, attention_mask, etc.
-tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=["instruction", "context", "response", "category", "text"])
+tokenized_dataset = dataset.map(
+    tokenize_function,
+    batched=True,
+    remove_columns=["instruction", "context", "response", "category", "text"],
+)
 
 # Split the tokenized dataset
 train_test_split = tokenized_dataset.train_test_split(test_size=0.1, seed=42)
@@ -65,21 +69,24 @@ lora_config = LoraConfig(
         "o_proj",
         "gate_proj",
         "up_proj",
-        "down_proj"
+        "down_proj",
     ],
 )
 
-# 4. Load the base model in 4-bit quantization
+# 4. Load the base model in 4-bit quantization with BitsAndBytesConfig
+quantization_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True,
+)
+
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    quantization_config={
-        "load_in_4bit": True,
-        "bnb_4bit_compute_dtype": torch.float16,
-        "bnb_4bit_quant_type": "nf4",
-        "bnb_4bit_use_double_quant": True,
-    },
+    quantization_config=quantization_config,
     device_map=device_map,
-    trust_remote_code=True, # Qwen models often require this
+    trust_remote_code=True,
+    attn_implementation="flash_attention_2"
 )
 
 # Prepare the model for k-bit training
@@ -93,9 +100,11 @@ model.print_trainable_parameters()
 output_dir = "./qwen2_5_dolly_qlora"  # Directory to save fine-tuned model
 training_args = TrainingArguments(
     output_dir=output_dir,
-    per_device_train_batch_size=4,
+    per_device_train_batch_size=6,
     gradient_accumulation_steps=4,
     learning_rate=2e-4,
+    lr_scheduler_type="cosine",
+    warmup_ratio=0.1,
     num_train_epochs=3,
     fp16=True,
     eval_strategy="epoch",
@@ -106,7 +115,7 @@ training_args = TrainingArguments(
     remove_unused_columns=False,
     logging_dir="./logs",  # Add logging directory
     logging_steps=10,  # Log every 10 steps
-    report_to="none", # remove default reports, if you want to use wandb, or tensorboard, keep it, and install those libraries.
+    report_to="none",  # remove default reports, if you want to use wandb, or tensorboard, keep it, and install those libraries.
 )
 
 # 6. Set up data collator
@@ -127,7 +136,6 @@ train_result = trainer.train()
 
 # 9. Save the fine-tuned LoRA adapters
 model.save_pretrained(output_dir)
-
 
 # Store training and evaluation metrics
 train_history = train_result.metrics
