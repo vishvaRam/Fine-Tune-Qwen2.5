@@ -102,6 +102,7 @@ output_dir = "./qwen2_5_dolly_qlora"  # Directory to save fine-tuned model
 training_args = TrainingArguments(
     output_dir=output_dir,
     per_device_train_batch_size=6,
+    per_device_eval_batch_size=2,  # Keep at 1
     gradient_accumulation_steps=4,
     learning_rate=2e-4,
     lr_scheduler_type="cosine",
@@ -141,28 +142,46 @@ model.save_pretrained(output_dir)
 train_history = train_result.metrics
 eval_history = trainer.evaluate()
 
-# Extract loss values
-train_loss = [train_history["train_loss"]] 
-eval_loss = [eval_history["eval_loss"]]
+final_eval_loss = eval_history.get("eval_loss")
 
-# Extract epochs
-epochs = range(1, len(train_loss) + 1)
+if final_eval_loss is not None:
+    final_perplexity = torch.exp(torch.tensor(final_eval_loss)).item()
+    print(f"Final Evaluation Loss: {final_eval_loss:.4f}")
+    print(f"Final Perplexity: {final_perplexity:.2f}")
 
-# Plotting the training and evaluation loss
-plt.figure(figsize=(10, 5))
-plt.plot(epochs, train_loss, label="Training Loss")
-plt.plot(epochs, eval_loss, label="Evaluation Loss")
-plt.xlabel("Epochs")
+# --- 11. Extracting Metrics from log_history for Plotting ---
+train_losses = []
+eval_losses = []
+eval_steps = [] # Store steps where evaluation occurred
+
+# Iterate through the trainer's log_history
+for log in trainer.state.log_history:
+    # Training loss is logged at 'logging_steps' intervals
+    if "loss" in log and "learning_rate" in log: # Check if it's a training step log
+        train_losses.append({"step": log["step"], "loss": log["loss"]})
+    # Evaluation loss is logged at 'eval_steps' intervals
+    if "eval_loss" in log:
+        eval_losses.append({"step": log["step"], "loss": log["eval_loss"]})
+
+# Prepare data for plotting
+train_steps_plot = [entry["step"] for entry in train_losses]
+train_values_plot = [entry["loss"] for entry in train_losses]
+
+eval_steps_plot = [entry["step"] for entry in eval_losses]
+eval_values_plot = [entry["loss"] for entry in eval_losses]
+
+# --- 12. Plotting the Training and Evaluation Loss ---
+plt.figure(figsize=(12, 6))
+plt.plot(train_steps_plot, train_values_plot, label="Training Loss", marker='.')
+plt.plot(eval_steps_plot, eval_values_plot, label="Evaluation Loss", marker='o', linestyle='--')
+
+plt.xlabel("Training Steps")
 plt.ylabel("Loss")
-plt.title("Training and Evaluation Loss")
+plt.title("Training and Evaluation Loss Over Steps")
 plt.legend()
-plt.savefig(f"{output_dir}/loss_plot.png")  # Save the plot
+plt.grid(True)
+plt.tight_layout() # Adjust layout to prevent labels from overlapping
+plot_path = os.path.join(output_dir, "loss_plot.png")
+plt.savefig(plot_path)
+print(f"Loss plot saved to {plot_path}")
 plt.show()
-
-# To later load the LoRA adapters for inference:
-# from peft import PeftModel, PeftConfig
-#
-# peft_config = PeftConfig.from_pretrained(output_dir)
-# model = AutoModelForCausalLM.from_pretrained(model_name, load_in_4bit=True, torch_dtype=torch.float16, device_map=device_map, trust_remote_code=True)
-# model = PeftModel.from_pretrained(model, output_dir)
-# tokenizer = AutoTokenizer.from_pretrained(model_name)
